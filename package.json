@@ -30,5 +30,12 @@
 	},
 	"lint-staged": {
 		"*.{js,md,ts,vue,json}": "eslint --fix"
+	},
+	"dependencies": {
+		"@element-plus/icons-vue": "^2.1.0",
+		"@lark-base-open/js-sdk": "^0.3.4",
+		"@qww0302/use-bitable": "^0.2.0",
+		"element-plus": "^2.4.2",
+		"vue": "^3.3.8"
 	}
 }
