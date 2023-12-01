@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "vite --mode dev",
 		"dev:Beta": "vite --mode beta",
-		"github:build": "vite build --base /Excel-Compare-and-Import/ --mode alpha",
+		"github:build": "vite build --base /BaseTableManager/ --mode alpha",
 		"build": "vite build --base ./ --mode stable",
 		"preview": "vite preview --port 4173",
 		"prepare": "husky install",
