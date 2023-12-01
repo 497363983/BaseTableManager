@@ -1,3 +1,3 @@
-# vite-start
+# BaseTableManager
 
-A template to use vite
+An extension used to manage the tables in Base  in a structured manner.

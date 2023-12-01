@@ -1,45 +1,60 @@
 {
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true
-  },
-  "extends": [
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended",
-    "plugin:markdown/recommended"
-  ],
-  "parser": "@typescript-eslint/parser",
-  "parserOptions": {
-    "ecmaVersion": "latest",
-    "sourceType": "module"
-  },
-  "plugins": [
-    "@typescript-eslint",
-    "markdown"
-  ],
-  "rules": {
-    "indent": [
-      "error",
-      "tab"
-    ],
-    "linebreak-style": [
-      "error",
-      "unix"
-    ],
-    "quotes": [
-      "error",
-      "double"
-    ],
-    "semi": [
-      "error",
-      "never"
-    ]
-  },
-  "overrides": [
-    {
-      "files": ["*.md", "**/*.md"],
-      "processor": "markdown/markdown"
-    }
-  ]
+	"root": true,
+	"env": {
+		"browser": true,
+		"es2021": true,
+		"node": true
+	},
+	"extends": [
+		"eslint:recommended",
+		"plugin:@typescript-eslint/recommended",
+		"plugin:markdown/recommended",
+		"plugin:vue/vue3-recommended"
+	],
+	"parser": "vue-eslint-parser",
+	"parserOptions": {
+		"parser": "@typescript-eslint/parser",
+		"sourceType": "module"
+	},
+	"plugins": [
+		"@typescript-eslint",
+		"markdown"
+	],
+	"rules": {
+		"indent": [
+			"error",
+			"tab"
+		],
+		"linebreak-style": [
+			"error",
+			"unix"
+		],
+		"quotes": [
+			"error",
+			"double"
+		],
+		"semi": [
+			"error",
+			"never"
+		],
+		"vue/multi-word-component-names": ["error", {
+			"ignores": ["index"]
+		}],
+		"vue/html-indent": ["error", "tab", {
+			"attribute": 1,
+			"baseIndent": 1,
+			"closeBracket": 0,
+			"alignAttributesVertically": true,
+			"ignores": []
+		}]
+	},
+	"overrides": [
+		{
+			"files": [
+				"*.md",
+				"**/*.md"
+			],
+			"processor": "markdown/markdown"
+		}
+	]
 }

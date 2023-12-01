@@ -62,7 +62,10 @@
 		"Table",
 		"Manager"
 	],
-	"author": "qww <wqian9790@gmail.com>",
+	"author": {
+		"name": "qww",
+		"url": "https://github.com/497363983"
+	},
 	"license": "MIT",
 	"bugs": {
 		"url": "https://github.com/497363983/BaseTableManager/issues"

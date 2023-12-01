@@ -1,0 +1,974 @@
+<script lang="ts" setup>
+import treeNode from "./treeNode.vue"
+import {
+	Search,
+	FolderAdd,
+	Refresh,
+	Plus,
+	CloseBold,
+	Lock,
+	ArrowDown,
+	Share,
+	Folder,
+} from "@element-plus/icons-vue"
+import {
+	ref,
+	watch,
+	onMounted,
+	nextTick,
+	h,
+	toRaw
+} from "vue"
+import type { NodeItem, ViewFolderNode } from "@/types"
+import { NodeIcon, NodeCategory } from "@/types"
+import {
+	ElTree,
+	ElMessageBox,
+	ElForm,
+	ElFormItem,
+	ElInput,
+	ElMessage,
+	ElSelectV2,
+} from "element-plus"
+import { useTableMap } from "./composables"
+import type { IFieldConfig } from "@lark-base-open/js-sdk"
+import { bitable, FieldType } from "@lark-base-open/js-sdk"
+import type Node from "element-plus/es/components/tree/src/model/node"
+import type {
+	AllowDropType,
+	NodeDropType,
+} from "element-plus/es/components/tree/src/tree.type"
+import AddTableIcon from "@/icons/addTable-icon.vue"
+import { useI18n } from "vue-i18n"
+import { vOnClickOutside } from "@vueuse/components"
+import { useToggle } from "@vueuse/core"
+import { getFieldOptions, indexFields } from "./utils"
+
+const { t } = useI18n()
+
+// TableMap
+const {
+	treeData,
+	selectSharedTableMapTable,
+	loadTableList,
+	refreshing,
+	activeTableNodeId,
+	editable,
+	removeNodeTo,
+	createNode,
+	isSharedTable,
+	loadSharedTable,
+	tableMap,
+	loadViewList,
+	mapList,
+	currentMap,
+	setCurrentMap,
+	createMapLocally,
+	canAddTable,
+} = useTableMap()
+
+// Search
+const searchText = ref("")
+const tableTreeRef = ref<InstanceType<typeof ElTree>>()
+const filterNode = (value: string, data: NodeItem) => {
+	if (!value) return true
+	return data.name.includes(value)
+}
+watch(searchText, (val) => {
+	tableTreeRef.value!.filter(val)
+})
+
+// Contextmenu
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({
+	x: 0,
+	y: 0,
+})
+const contextMenuTriggerRef = ref({
+	getBoundingClientRect: () => contextMenuPosition.value,
+})
+const contextMenuNode = ref<NodeItem>()
+const onNodeContextmenu = (e: MouseEvent, data: NodeItem) => {
+	contextMenuPosition.value = DOMRect.fromRect({
+		x: e.clientX,
+		y: e.clientY,
+	})
+	contextMenuNode.value = data
+	// contextMenuVisible.value = true
+}
+
+// NodeExpand Event
+const expandedNodes = ref<string[]>([])
+const onNodeExpand = (data: NodeItem) => {
+	console.log("expand", data)
+	expandedNodes.value.push(data.id)
+	if (data.category === NodeCategory.FOLDER && data.children.length > 0) {
+		if (typeof data.icon === "string") data.icon = NodeIcon.FOLDER_OPENED
+		if (typeof data.icon === "object") data.icon.name = NodeIcon.FOLDER_OPENED
+	}
+}
+
+// NodeCollapse Event
+const onNodeCollapse = (data: NodeItem) => {
+	expandedNodes.value = expandedNodes.value.filter((id) => id !== data.id)
+	if (data.category === NodeCategory.FOLDER) {
+		if (typeof data.icon === "string") data.icon = NodeIcon.FOLDER
+		if (typeof data.icon === "object") data.icon.name = NodeIcon.FOLDER
+	}
+}
+
+// Click Event
+const onNodeClick = (data: NodeItem, node: Node) => {
+	console.log("click", data, node)
+	if (data.category === NodeCategory.TABLE) {
+		bitable.ui.switchToTable(data.meta.id)
+	}
+	if (data.category === NodeCategory.VIEW) {
+		bitable.ui.switchToView(data.tableId, data.meta.id)
+	}
+	if (!node.expanded) {
+		nextTick(() => {
+			node.expand(()=>{}, true)
+			onNodeExpand(data)
+		})
+	}
+	if (node.expanded && data.category !== NodeCategory.TABLE) {
+		nextTick(() => {
+			node.collapse()
+			onNodeCollapse(data)
+		})
+	}
+}
+
+// allowDrag
+const allowDrag = (node: Node) => {
+	const data = node.data as NodeItem
+	if (data.category === NodeCategory.VIEW) return false
+	if (data.category === NodeCategory.FOLDER && data.tableId) return false
+	return true
+}
+
+// allowDrop
+const allowDrop = (dragging: Node, drop: Node, type: AllowDropType) => {
+	const draggingData = dragging.data as NodeItem
+	const dropData = drop.data as NodeItem
+	if (draggingData.category === NodeCategory.FOLDER && dropData.category === NodeCategory.TABLE) return false
+	if (type === "inner") return (dropData.childrenType as NodeCategory[]).includes(draggingData.category)
+	if (dropData.tableId) return false
+	if (["prev", "next"].includes(type) && dropData.parent === draggingData.parent) return false
+	return true
+}
+
+/**
+ * New Nodes
+ */
+// newFolder
+const canCreateFolder = ref(true)
+const newFolder = () => {
+	if (!canCreateFolder.value) return
+	const currentNodeData = tableTreeRef.value?.getCurrentNode() as	NodeItem
+	const creatingFolder = ref(false)
+	const disabled = ref(false)
+	console.log("ddd",disabled)
+	const name = ref<string>()
+	ElMessageBox({
+		title: t("tips.newFolder"),
+		message: () => {
+			return h(
+				ElForm,
+				null,
+				{
+					default: () => {
+						return h(
+							ElFormItem,
+							{
+								label: t("treeNode.folderName"),
+							},
+							{
+								default: () => {
+									return h(
+										ElInput,
+										{
+											placeholder: t("placeholder.inputFolderName"),
+											modelValue: name.value,
+											"onUpdate:modelValue": (val: string) => {
+												name.value = val
+											},
+										}
+									)
+								}
+							}
+						)
+					}
+				}
+			)
+		},
+		showCancelButton: true,
+		confirmButtonText: t("messageBox.confirm"),
+		cancelButtonText: t("messageBox.cancel"),
+		autofocus: true,
+		lockScroll: true,
+		beforeClose: (action, instance, done) => {
+			if (creatingFolder.value) return
+			if (action !== "confirm") return done()
+			if (!name.value) {
+				ElMessage({
+					type: "warning",
+					message: t("placeholder.inputFolderName"),
+					grouping: true,
+				})
+				return
+			}
+			creatingFolder.value = true
+			instance.confirmButtonLoading = true
+			disabled.value = true
+			createNode({
+				type: NodeCategory.FOLDER,
+				name: toRaw(name.value),
+				parent: currentNodeData
+			}).catch((e)=>{
+				console.error(e)
+				done()
+			}).finally(() => {
+				creatingFolder.value = false
+				done()
+			})
+		},
+	})
+}
+
+// newTable
+const tableDialogRef = ref()
+const canCreateTable = ref(true)
+const tableDialogVisible = ref(false)
+const toggleTableDialog = useToggle(tableDialogVisible)
+const newTableName = ref<string>()
+const newTableParent = ref<NodeItem | null>(null)
+const newTableFields = ref<IFieldConfig[]>([
+	{
+		type: FieldType.Text,
+		name: "Text",
+	}
+])
+const creatingTable = ref(false)
+const resetTableFields = () => {
+	newTableFields.value = [
+		{
+			type: FieldType.Text,
+			name: "Text",
+		}
+	]
+}
+const addField = () => {
+	newTableFields.value.push({
+		type: FieldType.Text,
+		name: "Text" + newTableFields.value.length,
+	})
+}
+const deleteField = (index: number) => {
+	newTableFields.value.splice(index, 1)
+}
+const openTableDialog = () => {
+	const currentNodeData = tableTreeRef.value?.getCurrentNode() as	NodeItem
+	newTableParent.value = currentNodeData
+	toggleTableDialog()
+}
+const newTable = () => {
+	if (!newTableName.value) {
+		ElMessage({
+			type: "warning",
+			message: t("placeholder.inputTableName"),
+			grouping: true,
+		})
+		return
+	}
+	creatingTable.value = true
+	createNode({
+		type: NodeCategory.TABLE,
+		name: toRaw(newTableName.value),
+		tableConfig: {
+			fields: toRaw(newTableFields.value)
+		},
+		parent: toRaw(newTableParent.value)
+	}).then((tableId) => {
+		toggleTableDialog()
+		bitable.ui.switchToTable(tableId)
+		creatingTable.value = false
+		resetTableFields()
+		newTableName.value = ""
+	}).catch((e) => {
+		creatingTable.value = false
+		console.error(e)
+	})
+}
+
+// refresh
+const refresh = () => {
+	refreshing.value = true
+	if (isSharedTable.value) {
+		loadSharedTable().then((raws) => {
+			tableMap.value = raws
+			refreshing.value = false
+		}).catch((err) => {
+			console.error(err)
+			refreshing.value = false
+		})
+	}
+	else {
+		loadTableList().catch((err) => {
+			console.error(err)
+		})
+
+	}
+}
+
+// newMap
+const creatingMap = ref(false)
+const newMap = (_type?: "shared" | "local") => {
+	const name = ref<string>()
+	const template = ref<string>()
+	const type = ref<"shared" | "local">(_type || "local")
+	ElMessageBox({
+		title: t("treeNode.newTableMap"),
+		message: () => {
+			return h(
+				ElForm,
+				{
+					labelPosition: "top",
+				},
+				{
+					default: () => {
+						return [
+							h(
+								ElFormItem,
+								{
+									label: t("treeNode.tableMapName"),
+									required: true,
+								},
+								{
+									default: () => {
+										return h(
+											ElInput,
+											{
+												placeholder: t("placeholder.inputTableMapName"),
+												modelValue: name.value,
+												"onUpdate:modelValue": (val: string) => {
+													name.value = val
+												},
+											}
+										)
+									}
+								}
+							),
+							h(
+								ElFormItem,
+								{
+									label: t("treeNode.tableMapType"),
+								},
+								{
+									default: () => {
+										return h(
+											ElSelectV2,
+											{
+												options: [
+													{
+														label: t("treeNode.sharedTableMap"),
+														value: "shared",
+													},
+													{
+														label: t("treeNode.localTableMap"),
+														value: "local",
+													}
+												],
+												modelValue: type.value,
+												"onUpdate:modelValue": (val: "shared" | "local") => {
+													type.value = val
+												},
+											}
+										)
+									}
+								}
+							),
+							h(
+								ElFormItem,
+								{
+									label: t("treeNode.tableMapTemplate"),
+								},
+								{
+									default: () => {
+										return h(
+											ElSelectV2,
+											{
+												options: mapList.value.map((item) => {
+													return {
+														label: item.name,
+														value: item.id,
+													}
+												}),
+												modelValue: template.value,
+												"onUpdate:modelValue": (val: string) => {
+													template.value = val
+												},
+												clearable: true,
+												filterable: true,
+											}
+										)
+									}
+								}
+							)
+						]
+					}
+				}
+			)
+		},
+		showCancelButton: true,
+		confirmButtonText: t("messageBox.confirm"),
+		cancelButtonText: t("messageBox.cancel"),
+		autofocus: true,
+		lockScroll: true,
+		beforeClose: (action, instance, done) => {
+			if (creatingMap.value) return
+			if (action !== "confirm") return done()
+			if (!name.value) {
+				ElMessage({
+					type: "warning",
+					message: t("placeholder.inputTableMapName"),
+					grouping: true,
+				})
+				return
+			}
+			instance.confirmButtonLoading = true
+			creatingMap.value = true
+			if (type.value === "local") {
+				createMapLocally(name.value, template.value)
+				creatingMap.value = false
+				done()
+			}
+		}
+	})
+}
+
+// onCurrentChange
+const activeTableNode = ref<Node>()
+const onCurrentChange = (data: NodeItem, node: Node) => {
+	if (data && data.category === NodeCategory.TABLE) {
+		if (
+			activeTableNode.value
+			&& activeTableNode.value.expanded
+		) activeTableNode.value.collapse()
+		activeTableNode.value = node
+	}
+	if (
+		data
+		&& !data.childrenType.includes(NodeCategory.FOLDER as never)
+		|| data.category === NodeCategory.TABLE
+		|| data.category === NodeCategory.VIEW
+	) canCreateFolder.value = false
+	else canCreateFolder.value = true
+	if (
+		!data.childrenType.includes(NodeCategory.TABLE as never)
+		|| data.category === NodeCategory.TABLE
+		|| data.category === NodeCategory.VIEW
+	) canCreateTable.value = false
+	else canCreateTable.value = true
+}
+// onDrop
+const onDrop = (
+	draggingNode: Node,
+	dropNode: Node,
+	dropType: NodeDropType
+) => {
+	if (dropType === "inner") removeNodeTo(draggingNode.data as NodeItem, dropNode.data as NodeItem)
+	if (["before", "after"].includes(dropType)) {
+		const parent = (dropNode.data as NodeItem).parent
+		removeNodeTo(draggingNode.data as NodeItem, parent)
+	}
+}
+
+// Lazy Load View
+const isLeaf = (data: NodeItem) => {
+	if (data.category === NodeCategory.VIEW) return true
+	if (
+		data.category === NodeCategory.FOLDER
+		&& data.tableId
+		&& data.lazy
+	) return false
+	return data.children?.length === 0
+}
+const load = (node: Node, resolve: (data: NodeItem[]) => void) => {
+	console.log("load", node)
+	if (node.level === 0) return resolve(node.data as NodeItem[])
+	const data = node.data as NodeItem
+	if (
+		data.category === NodeCategory.FOLDER
+		&& data.childrenType.includes(NodeCategory.VIEW as never)
+		&& data.tableId
+	) {
+		return loadViewList(data as ViewFolderNode).then((views) => {
+			resolve(views)
+			data.children = views
+		}).then(()=>{
+			console.log("loadViewList", node)
+		}).catch((err) => {
+			console.error(err)
+			resolve([])
+		})
+	}
+	if (data.children) return resolve(node.data.children)
+	return resolve([])
+}
+
+// onClickOutside
+const topGroupRef = ref()
+const menuRef = ref()
+const onClickOutside = [
+	() => {
+		canCreateFolder.value = true
+		canCreateTable.value = true
+		tableTreeRef.value?.setCurrentKey(undefined)
+	},
+	{ ignore: [topGroupRef, tableDialogRef, menuRef] }
+]
+
+watch(
+	activeTableNodeId,
+	(newVal, oldVal)=>{
+		console.log("activeTableNodeId",newVal)
+		if (!newVal) return
+		if (newVal === oldVal) return
+		const currentKey = tableTreeRef.value?.getCurrentKey()
+		if (currentKey !== newVal) nextTick(() => {
+			tableTreeRef.value?.setCurrentKey(newVal, true)
+			const node = tableTreeRef.value?.getNode(newVal)
+			if (node) {
+				if (!node.expanded) node.expand(()=>{}, true)
+				activeTableNode.value = node
+			}
+		})
+		if (activeTableNode.value) nextTick(() => { activeTableNode.value?.expanded && activeTableNode.value?.collapse() })
+		if (!newVal) return
+		const node = tableTreeRef.value?.getNode(newVal)
+		if (node) {
+			nextTick(()=>{
+				if (!node.expanded) node.expand(()=>{}, true)
+				activeTableNode.value = node
+			})
+		}
+	},
+	{ immediate: true }
+)
+
+// Watch Nodes Update
+watch(
+	() => treeData,
+	() => {
+		if (refreshing.value) {
+			nextTick(() =>{
+				console.log(expandedNodes.value)
+				expandedNodes.value.forEach((id) => {
+					const node = tableTreeRef.value?.getNode(id)
+					console.log(node)
+					if (node) {
+						const data = node.data
+						if (data.category === NodeCategory.FOLDER){
+							if (typeof data.icon === "string") data.icon = NodeIcon.FOLDER_OPENED
+							if (typeof data.icon === "object") data.icon.name = NodeIcon.FOLDER_OPENED
+						}
+						node.expand(()=>{}, false)
+					}
+					else expandedNodes.value = expandedNodes.value.filter((i) => i !== id)
+				})
+				refreshing.value = false
+				if (activeTableNodeId.value) tableTreeRef.value?.setCurrentKey(activeTableNodeId.value, true)
+			})
+		}
+	},
+	{ deep: true }
+)
+
+onMounted(() => {
+	loadTableList().catch((err) => {
+		console.error(err)
+	})
+})
+
+</script>
+
+<template>
+	<div v-if="treeData.length">
+		<el-row
+			ref="topGroupRef"
+			style="margin-bottom: 5px;"
+			justify="space-between"
+		>
+			<el-col>
+				<el-input
+					v-model="searchText"
+					:prefix-icon="Search"
+					:placeholder="$t('placeholder.search')"
+					clearable
+				/>
+			</el-col>
+		</el-row>
+		<el-row
+			ref="menuRef"
+			justify="space-between"
+		>
+			<el-col :span="14">
+				<el-dropdown
+					trigger="click"
+					:visible-arrow="false"
+					@command="setCurrentMap"
+				>
+					<div class="map-select">
+						<el-text
+							style="cursor: pointer;align-items: center;display: flex;"
+							truncated
+						>
+							<el-icon v-if="currentMap && currentMap.type === 'shared'">
+								<Share />
+							</el-icon>
+							<el-icon v-else>
+								<Folder />
+							</el-icon>
+							{{ currentMap?.name || $t("tips.noTableMap") }}
+							<el-icon
+								class="el-icon--right"
+								size="large"
+							>
+								<ArrowDown />
+							</el-icon>
+						</el-text>
+					</div>
+					<template #dropdown>
+						<el-dropdown-menu class="map-list">
+							<el-dropdown-item
+								v-for="item of mapList"
+								:key="item.id"
+								style="display: flex;align-items: center;"
+								command="item.id"
+							>
+								<el-icon>
+									<component :is="item.type === 'shared' ? Share : null" />
+								</el-icon>
+								<el-text truncated>
+									{{ item.name }}
+								</el-text>
+								<el-link
+									class="delete-map el-icon--right"
+									:underline="false"
+									type="danger"
+								>
+									<el-icon>
+										<CloseBold />
+									</el-icon>
+								</el-link>
+							</el-dropdown-item>
+						</el-dropdown-menu>
+					</template>
+				</el-dropdown>
+				<div
+					class="map-select"
+					style="display: inline-flex;"
+					@click="newMap()"
+				>
+					<el-icon size="large">
+						<Plus />
+					</el-icon>
+				</div>
+			</el-col>
+			<el-col :span="10">
+				<el-row justify="end">
+					<el-button-group>
+						<el-tooltip>
+							<template #content>
+								{{ $t("tips.newTable") }}
+							</template>
+							<el-button
+								:disabled="!editable || !canCreateTable"
+								:icon="AddTableIcon"
+								type="primary"
+								size="small"
+								@click="openTableDialog()"
+							/>
+						</el-tooltip>
+						<el-tooltip>
+							<template #content>
+								{{ $t("tips.newFolder") }}
+							</template>
+							<el-button
+								type="primary"
+								:disabled="!editable || !canCreateFolder"
+								:icon="FolderAdd"
+								size="small"
+								@click="newFolder()"
+							/>
+						</el-tooltip>
+						<el-tooltip>
+							<template #content>
+								{{ $t("tips.refresh") }}
+							</template>
+							<el-button
+								:icon="Refresh"
+								type="primary"
+								:loading-icon="Refresh"
+								:loading="refreshing"
+								size="small"
+								@click="refresh()"
+							/>
+						</el-tooltip>
+					</el-button-group>
+				</el-row>
+			</el-col>
+		</el-row>
+		<el-scrollbar height="75vh">
+			<div style="padding: 10px;">
+				<el-tree
+					ref="tableTreeRef"
+					v-on-click-outside="onClickOutside"
+					style="width: 100%;"
+					:data="treeData"
+					:expand-on-click-node="false"
+					:filter-node-method="filterNode"
+					:allow-drop="allowDrop"
+					:allow-drag="allowDrag"
+					render-after-expand
+					highlight-current
+					:draggable="editable"
+					node-key="id"
+					:props="{
+						isLeaf: isLeaf,
+					}"
+					lazy
+					:load="load"
+					@node-collapse="onNodeCollapse"
+					@node-expand="onNodeExpand"
+					@current-change="onCurrentChange"
+					@node-click="onNodeClick"
+					@node-contextmenu="onNodeContextmenu"
+					@node-drop="onDrop"
+				>
+					<template #default="{ data }">
+						<treeNode :node="data" />
+					</template>
+				</el-tree>
+			</div>
+		</el-scrollbar>
+	</div>
+	<div v-else>
+		<el-scrollbar max-height="90vh">
+			<div style="padding: 10px;">
+				<p>
+					<el-text
+						type="info"
+						size="large"
+					>
+						{{ $t("tips.noTableMap") }}
+					</el-text>
+				</p>
+				<div style="display: flex;justify-content: center;margin: 20px 0 20px 0;">
+					<el-button
+						:disabled="!canAddTable"
+						type="primary"
+						size="large"
+						style="width: 100%;text-wrap: wrap;"
+						@click="newMap('shared')"
+					>
+						{{ $t("tips.autoCreateTableMap") }}
+					</el-button>
+				</div>
+				<p>
+					<el-text
+						type="info"
+						size="large"
+					>
+						{{ $t("tips.autoCreateToShare") }}
+					</el-text>
+				</p>
+				<p>
+					<el-text
+						type="info"
+						size="large"
+					>
+						{{ `${$t("tips.createTableMapManually")}${$t("tips.structureReferTo")}` }}
+						<el-link
+							target="_blank"
+							href="https://dkywk0xucr.feishu.cn/docx/UZJ6dxKPCoeOJAxBqfacu0UVnad#BxWvdax2XogB3WxnvoSchlZxnie"
+						>
+							{{ $t("usageGuide") }}
+						</el-link>
+					</el-text>
+				</p>
+				<div style="display: flex;justify-content: center;margin: 20px 0 20px 0;">
+					<el-button
+						type="primary"
+						size="large"
+						style="width: 100%;text-wrap: wrap;"
+						@click="selectSharedTableMapTable()"
+					>
+						{{ $t("tips.selectTableMap") }}
+					</el-button>
+				</div>
+				<p>
+					<el-text
+						type="info"
+						size="large"
+					>
+						{{ $t("tips.createLocallyTip") }}
+					</el-text>
+				</p>
+				<div style="display: flex;justify-content: center;margin: 20px 0 20px 0;">
+					<el-button
+						type="primary"
+						size="large"
+						style="width: 100%;text-wrap: wrap;"
+						@click="newMap('local')"
+					>
+						{{ $t("tips.createTableMapLocally") }}
+					</el-button>
+				</div>
+			</div>
+		</el-scrollbar>
+	</div>
+	<el-popover
+		v-model:visible="contextMenuVisible"
+		trigger="contextmenu"
+		:show-arrow="false"
+		:virtual-ref="contextMenuTriggerRef"
+		:hide-after="0"
+		virtual-triggering
+	>
+		<ContextMenu :node="contextMenuNode" />
+	</el-popover>
+	<el-dialog
+		ref="tableDialogRef"
+		v-model="tableDialogVisible"
+		:title="$t('treeNode.createTable')"
+		lock-scroll
+		fullscreen
+	>
+		<el-scrollbar height="60vh">
+			<el-form
+				style="padding: 10px;"
+				label-position="top"
+			>
+				<el-form-item
+					:label="$t('treeNode.tableName')"
+					required
+				>
+					<el-input
+						v-model="newTableName"
+						:disabled="creatingTable"
+						:placeholder="$t('treeNode.tableName')"
+					/>
+				</el-form-item>
+				<el-form-item>
+					<template #label>
+						<span>{{ $t("treeNode.tableFields") }}</span>
+						<el-button
+							size="small"
+							style="margin-left: 5px;"
+							:disabled="creatingTable"
+							:icon="Plus"
+							@click="addField()"
+						/>
+					</template>
+					<el-table
+						:data="newTableFields"
+						max-height="250"
+						stripe
+					>
+						<el-table-column
+							type="index"
+							:index="(i) => i+1"
+						>
+							<template #default="{ $index }">
+								<el-icon v-if="$index === 0">
+									<Lock />
+								</el-icon>
+								<span v-else>{{ $index + 1 }}</span>
+							</template>
+						</el-table-column>
+						<el-table-column
+							prop="name"
+							max-height="250"
+							:label="$t('treeNode.fieldName')"
+						>
+							<template #default="{ row }">
+								<el-input
+									v-model="row.name"
+									:disabled="creatingTable"
+									:placeholder="$t('treeNode.fieldName')"
+								/>
+							</template>
+						</el-table-column>
+						<el-table-column :label="$t('treeNode.fieldType')">
+							<template #default="{ row, $index }">
+								<el-select-v2
+									v-model="row.type"
+									:disabled="creatingTable"
+									:options="getFieldOptions( $index === 0 ? indexFields : undefined)"
+									filterable
+								>
+									<template #default="{item}">
+										<span style="margin-right: 5px; position: relative; right: 0px">
+											<el-icon><component :is="item.icon" /></el-icon>
+										</span>
+										<span style="user-select: none">{{ item.label }}</span>
+									</template>
+								</el-select-v2>
+							</template>
+						</el-table-column>
+						<el-table-column width="70">
+							<template #default="{ $index }">
+								<el-button
+									v-if="$index !== 0"
+									:disabled="creatingTable"
+									:icon="CloseBold"
+									type="danger"
+									@click="deleteField($index)"
+								/>
+							</template>
+						</el-table-column>
+					</el-table>
+				</el-form-item>
+			</el-form>
+		</el-scrollbar>
+		<template #footer>
+			<el-button
+				:disabled="creatingTable"
+				@click="resetTableFields()"
+			>
+				{{ $t("messageBox.cancel") }}
+			</el-button>
+			<el-button
+				type="primary"
+				:loading="creatingTable"
+				:disabled="creatingTable"
+				@click="newTable()"
+			>
+				{{ $t("messageBox.confirm") }}
+			</el-button>
+		</template>
+	</el-dialog>
+</template>
+<style>
+.el-tree-node.is-drop-inner {
+	background-color: var(--el-tree-node-hover-bg-color);
+}
+.map-select {
+	border-radius: 4px;
+	padding: 5px;
+	cursor: pointer;
+}
+.map-select:hover {
+	background-color: var(--el-fill-color-light);
+}
+.map-list a.delete-map {
+	color: var(--el-text-color-regular) !important;
+}
+.map-list a.delete-map:hover {
+	color: var(--el-link-hover-text-color) !important;
+}
+
+</style>

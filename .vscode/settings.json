@@ -8,5 +8,12 @@
       "rule": "@stylistic/*",
       "severity": "off"
     }
-  ]
+  ],
+	"eslint.validate": [
+		"javascript",
+		"javascriptreact",
+    "vue",
+		"typescript",
+	],
+  "typescript.tsdk": "node_modules/typescript/lib"
 }
