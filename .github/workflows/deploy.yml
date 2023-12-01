@@ -13,7 +13,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'zjut-bio-party-undergraduate-branch' }}
+    if: ${{ github.repository_owner == '497363983' }}
     steps:
       - uses: actions/checkout@v4
         with:
