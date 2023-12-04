@@ -50,7 +50,7 @@
 		"vue": "^3.3.8",
 		"vue-i18n": "^9.7.1"
 	},
-	"description": "A template to use vite",
+	"description": "A plugin to manage table in base for feishu.",
 	"main": "index.html",
 	"repository": {
 		"type": "git",
