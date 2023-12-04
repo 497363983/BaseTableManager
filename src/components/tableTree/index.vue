@@ -17,7 +17,8 @@ import {
 	onMounted,
 	nextTick,
 	h,
-	toRaw
+	toRaw,
+	computed,
 } from "vue"
 import type { NodeItem, ViewFolderNode } from "@/types"
 import { NodeIcon, NodeCategory } from "@/types"
@@ -42,7 +43,9 @@ import AddTableIcon from "@/icons/addTable-icon.vue"
 import { useI18n } from "vue-i18n"
 import { vOnClickOutside } from "@vueuse/components"
 import { useToggle } from "@vueuse/core"
-import { getFieldOptions, indexFields } from "./utils"
+import { getFieldOptions, indexFields, contextmenu, addContextMenuItem } from "./utils"
+import RenameIcon from "@/icons/rename-icon.vue"
+import contextmenuItem from "./contextMenuItem.vue"
 
 const { t } = useI18n()
 
@@ -65,6 +68,8 @@ const {
 	setCurrentMap,
 	createMapLocally,
 	canAddTable,
+	renameNode,
+	manageable,
 } = useTableMap()
 
 // Search
@@ -94,7 +99,7 @@ const onNodeContextmenu = (e: MouseEvent, data: NodeItem) => {
 		y: e.clientY,
 	})
 	contextMenuNode.value = data
-	// contextMenuVisible.value = true
+	contextMenuVisible.value = true
 }
 
 // NodeExpand Event
@@ -128,8 +133,9 @@ const onNodeClick = (data: NodeItem, node: Node) => {
 	}
 	if (!node.expanded) {
 		nextTick(() => {
-			node.expand(()=>{}, true)
-			onNodeExpand(data)
+			node.expand(()=>{
+				onNodeExpand(data)
+			}, true)
 		})
 	}
 	if (node.expanded && data.category !== NodeCategory.TABLE) {
@@ -306,7 +312,7 @@ const newTable = () => {
 const refresh = () => {
 	refreshing.value = true
 	if (isSharedTable.value) {
-		loadSharedTable().then((raws) => {
+		loadTableList().then(loadSharedTable).then((raws) => {
 			tableMap.value = raws
 			refreshing.value = false
 		}).catch((err) => {
@@ -315,12 +321,18 @@ const refresh = () => {
 		})
 	}
 	else {
-		loadTableList().catch((err) => {
+		loadTableList().then(loadTableList).catch((err) => {
 			console.error(err)
 		})
-
 	}
+	contextMenuVisible.value = false
 }
+addContextMenuItem({
+	icon: Refresh,
+	text: "tips.refresh",
+	onClick: refresh,
+	permission: true
+})
 
 // newMap
 const creatingMap = ref(false)
@@ -448,9 +460,107 @@ const newMap = (_type?: "shared" | "local") => {
 	})
 }
 
+// renameNode
+const renaming = ref(false)
+const canRename = computed(() => {
+	if (!contextMenuNode.value) return false
+	if (contextMenuNode.value.category === NodeCategory.TABLE) return manageable.value
+	if (contextMenuNode.value.category === NodeCategory.VIEW) return false
+	if (contextMenuNode.value.category === NodeCategory.FOLDER) {
+		if (contextMenuNode.value.tableId) return false
+		return editable.value
+	}
+	return true
+})
+const rename = () => {
+	if (isSharedTable.value && !editable) return
+	const _name = ref<string | undefined>(contextMenuNode.value?.name)
+	ElMessageBox({
+		title: t("treeNode.rename"),
+		message: () => {
+			return h(
+				ElForm,
+				{
+					labelPosition: "top",
+				},
+				{
+					default: () => {
+						return h(
+							ElFormItem,
+							{
+								label: t("treeNode.newName"),
+								required: true,
+							},
+							{
+								default: () => {
+									return h(
+										ElInput,
+										{
+											placeholder: t("placeholder.inputNewName"),
+											modelValue: _name.value,
+											"onUpdate:modelValue": (val: string) => {
+												_name.value = val
+											},
+										}
+									)
+								}
+							}
+						)
+					}
+				}
+			)
+		},
+		showCancelButton: true,
+		confirmButtonText: t("messageBox.confirm"),
+		cancelButtonText: t("messageBox.cancel"),
+		autofocus: true,
+		lockScroll: true,
+		beforeClose: (action, instance, done) => {
+			if (renaming.value || !contextMenuNode.value) return
+			if (action !== "confirm") return done()
+			if (!_name.value) {
+				ElMessage({
+					type: "warning",
+					message: t("placeholder.inputNewName"),
+					grouping: true,
+				})
+				return
+			}
+			instance.confirmButtonLoading = true
+			renaming.value = true
+			if (_name.value === contextMenuNode.value.name) {
+				renaming.value = false
+				done()
+				return
+			}
+			renameNode(contextMenuNode.value, _name.value).then(() => {
+				done()
+			}).catch((err) => {
+				console.error(err)
+			}).finally(() => {
+				renaming.value = false
+				instance.confirmButtonLoading = false
+			})
+		}
+	})
+	contextMenuVisible.value = false
+}
+addContextMenuItem({
+	icon: RenameIcon,
+	text: "treeNode.rename",
+	onClick: rename,
+	permission: canRename,
+})
+
 // onCurrentChange
 const activeTableNode = ref<Node>()
 const onCurrentChange = (data: NodeItem, node: Node) => {
+	console.log("current", data, node)
+	if (!data) {
+		canCreateTable.value = true
+		canCreateFolder.value = true
+		return
+	}
 	if (data && data.category === NodeCategory.TABLE) {
 		if (
 			activeTableNode.value
@@ -459,8 +569,7 @@ const onCurrentChange = (data: NodeItem, node: Node) => {
 		activeTableNode.value = node
 	}
 	if (
-		data
-		&& !data.childrenType.includes(NodeCategory.FOLDER as never)
+		!data.childrenType.includes(NodeCategory.FOLDER as never)
 		|| data.category === NodeCategory.TABLE
 		|| data.category === NodeCategory.VIEW
 	) canCreateFolder.value = false
@@ -478,7 +587,11 @@ const onDrop = (
 	dropNode: Node,
 	dropType: NodeDropType
 ) => {
-	if (dropType === "inner") removeNodeTo(draggingNode.data as NodeItem, dropNode.data as NodeItem)
+	if (dropType === "inner") removeNodeTo(draggingNode.data as NodeItem, dropNode.data as NodeItem, () => {
+		dropNode.loadData(() => {
+			dropNode.expand(()=>{}, true)
+		})
+	})
 	if (["before", "after"].includes(dropType)) {
 		const parent = (dropNode.data as NodeItem).parent
 		removeNodeTo(draggingNode.data as NodeItem, parent)
@@ -541,16 +654,23 @@ watch(
 			tableTreeRef.value?.setCurrentKey(newVal, true)
 			const node = tableTreeRef.value?.getNode(newVal)
 			if (node) {
-				if (!node.expanded) node.expand(()=>{}, true)
+				if (!node.expanded) node.expand(()=>{
+					onNodeExpand(node.data as NodeItem)
+				}, true)
 				activeTableNode.value = node
 			}
 		})
-		if (activeTableNode.value) nextTick(() => { activeTableNode.value?.expanded && activeTableNode.value?.collapse() })
+		if (activeTableNode.value) nextTick(() => {
+			activeTableNode.value?.expanded && activeTableNode.value?.collapse()
+			if (activeTableNode.value) onNodeCollapse(activeTableNode.value.data as NodeItem)
+		})
 		if (!newVal) return
 		const node = tableTreeRef.value?.getNode(newVal)
 		if (node) {
 			nextTick(()=>{
-				if (!node.expanded) node.expand(()=>{}, true)
+				if (!node.expanded) node.expand(()=>{
+					onNodeExpand(node.data as NodeItem)
+				}, true)
 				activeTableNode.value = node
 			})
 		}
@@ -569,12 +689,10 @@ watch(
 					const node = tableTreeRef.value?.getNode(id)
 					console.log(node)
 					if (node) {
-						const data = node.data
-						if (data.category === NodeCategory.FOLDER){
-							if (typeof data.icon === "string") data.icon = NodeIcon.FOLDER_OPENED
-							if (typeof data.icon === "object") data.icon.name = NodeIcon.FOLDER_OPENED
-						}
-						node.expand(()=>{}, false)
+						const data = node.data as NodeItem
+						node.expand(() => {
+							onNodeExpand(data)
+						}, false)
 					}
 					else expandedNodes.value = expandedNodes.value.filter((i) => i !== id)
 				})
@@ -646,23 +764,34 @@ onMounted(() => {
 								v-for="item of mapList"
 								:key="item.id"
 								style="display: flex;align-items: center;"
-								command="item.id"
+								:command="item.id"
 							>
-								<el-icon>
-									<component :is="item.type === 'shared' ? Share : null" />
-								</el-icon>
-								<el-text truncated>
-									{{ item.name }}
-								</el-text>
-								<el-link
-									class="delete-map el-icon--right"
-									:underline="false"
-									type="danger"
-								>
-									<el-icon>
-										<CloseBold />
-									</el-icon>
-								</el-link>
+								<el-row style="width: 100%;">
+									<el-col :span="4">
+										<el-icon>
+											<component :is="item.type === 'shared' ? Share : Folder" />
+										</el-icon>
+									</el-col>
+									<el-col :span="16">
+										<el-text
+											truncated
+											:title="item.name"
+										>
+											{{ item.name }}
+										</el-text>
+									</el-col>
+									<el-col :span="4">
+										<el-link
+											class="delete-map el-icon--right"
+											:underline="false"
+											type="danger"
+										>
+											<el-icon>
+												<CloseBold />
+											</el-icon>
+										</el-link>
+									</el-col>
+								</el-row>
 							</el-dropdown-item>
 						</el-dropdown-menu>
 					</template>
@@ -834,11 +963,25 @@ onMounted(() => {
 		v-model:visible="contextMenuVisible"
 		trigger="contextmenu"
 		:show-arrow="false"
+		placement="bottom-start"
 		:virtual-ref="contextMenuTriggerRef"
 		:hide-after="0"
 		virtual-triggering
+		popper-style="padding: 5px;border: 0;"
 	>
-		<ContextMenu :node="contextMenuNode" />
+		<ul class="el-dropdown-menu">
+			<template
+				v-for="(item, index) of contextmenu"
+			>
+				<contextmenuItem
+					v-if="editable && item.permission"
+					:key="index"
+					:icon="item.icon"
+					:text="$t(item.text)"
+					@click="item.onClick()"
+				/>
+			</template>
+		</ul>
 	</el-popover>
 	<el-dialog
 		ref="tableDialogRef"
@@ -970,5 +1113,4 @@ onMounted(() => {
 .map-list a.delete-map:hover {
 	color: var(--el-link-hover-text-color) !important;
 }
-
 </style>

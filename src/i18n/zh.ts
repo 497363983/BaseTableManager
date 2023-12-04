@@ -6,6 +6,7 @@ export const zh = {
 		inputTableName: "输入数据表名称",
 		inputFolderName: "输入文件夹名称",
 		inputTableMapName: "输入数据表关系名称",
+		inputNewName: "输入新名称",
 	},
 	tips: {
 		noTableMap: "没有找到数据表关系表",
@@ -45,6 +46,7 @@ export const zh = {
 		sharedTableMap: "共享数据表关系",
 		localTableMap: "本地数据表关系",
 		tableMapTemplate: "数据表关系模板",
+		rename: "重命名",
 	},
 	fields: {
 		Text: "文本",

@@ -44,6 +44,7 @@ export const en = {
 		sharedTableMap: "Shared Table Map",
 		localTableMap: "Local Table Map",
 		tableMapTemplate: "Table Map Template",
+		rename: "Rename",
 	},
 	fields: {
 		Text: "Text",
