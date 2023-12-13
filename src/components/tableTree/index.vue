@@ -30,8 +30,10 @@ import {
 	ElInput,
 	ElMessage,
 	ElSelectV2,
+	ElRadioGroup,
+	ElRadio,
 } from "element-plus"
-import { useTableMap } from "./composables"
+import { useTableMap, type MapStorageItem } from "./composables"
 import type { IFieldConfig } from "@lark-base-open/js-sdk"
 import { bitable, FieldType } from "@lark-base-open/js-sdk"
 import type Node from "element-plus/es/components/tree/src/model/node"
@@ -70,6 +72,8 @@ const {
 	canAddTable,
 	renameNode,
 	manageable,
+	deleteTableMap,
+	createSharedMap,
 } = useTableMap()
 
 // Search
@@ -401,33 +405,33 @@ const newMap = (_type?: "shared" | "local") => {
 									}
 								}
 							),
-							h(
-								ElFormItem,
-								{
-									label: t("treeNode.tableMapTemplate"),
-								},
-								{
-									default: () => {
-										return h(
-											ElSelectV2,
-											{
-												options: mapList.value.map((item) => {
-													return {
-														label: item.name,
-														value: item.id,
-													}
-												}),
-												modelValue: template.value,
-												"onUpdate:modelValue": (val: string) => {
-													template.value = val
-												},
-												clearable: true,
-												filterable: true,
-											}
-										)
-									}
-								}
-							)
+							// h(
+							// 	ElFormItem,
+							// 	{
+							// 		label: t("treeNode.tableMapTemplate"),
+							// 	},
+							// 	{
+							// 		default: () => {
+							// 			return h(
+							// 				ElSelectV2,
+							// 				{
+							// 					options: mapList.value.map((item) => {
+							// 						return {
+							// 							label: item.name,
+							// 							value: item.id,
+							// 						}
+							// 					}),
+							// 					modelValue: template.value,
+							// 					"onUpdate:modelValue": (val: string) => {
+							// 						template.value = val
+							// 					},
+							// 					clearable: true,
+							// 					filterable: true,
+							// 				}
+							// 			)
+							// 		}
+							// 	}
+							// )
 						]
 					}
 				}
@@ -455,6 +459,16 @@ const newMap = (_type?: "shared" | "local") => {
 				createMapLocally(name.value, template.value)
 				creatingMap.value = false
 				done()
+			}
+			if (type.value === "shared") {
+				createSharedMap(name.value).then(() => {
+					done()
+				}).catch((err) => {
+					console.error(err)
+				}).finally(() => {
+					creatingMap.value = false
+					instance.confirmButtonLoading = false
+				})
 			}
 		}
 	})
@@ -488,7 +502,7 @@ const rename = () => {
 						return h(
 							ElFormItem,
 							{
-								label: t("treeNode.newName"),
+								label: t("placeholder.inputNewName"),
 								required: true,
 							},
 							{
@@ -551,6 +565,113 @@ addContextMenuItem({
 	onClick: rename,
 	permission: canRename,
 })
+
+// deleteMap
+const deletingMap = ref(false)
+const deleteMap = (store: MapStorageItem) => {
+	if (manageable.value && store.type === "shared") {
+		const isDeleteSharedTable = ref(false)
+		ElMessageBox({
+			title: t("treeNode.deleteTableMap"),
+			message: () => {
+				return h(
+					"div",
+					null,
+					[
+						h(
+							"p",
+							null,
+							t("treeNode.confirmDeleteSharedTableMap", { name: store.name })
+						),
+						h(
+							ElRadioGroup,
+							{
+								modelValue: isDeleteSharedTable.value,
+								"onUpdate:modelValue": (val) => {
+									isDeleteSharedTable.value = val as boolean
+								},
+							},
+							{
+								default: () => [
+									h(
+										ElRadio,
+										{
+											label: false,
+										},
+										{
+											default: () => t("treeNode.onlyLocalMap")
+										}
+									),
+									h(
+										ElRadio,
+										{
+											label: true,
+											disabled: !manageable.value,
+										},
+										{
+											default: () => t("treeNode.deleteSharedTableMap")
+										}
+									)
+								]
+							}
+						)
+					]
+				)
+			},
+			showCancelButton: true,
+			confirmButtonText: t("messageBox.confirm"),
+			cancelButtonText: t("messageBox.cancel"),
+			autofocus: true,
+			type: "warning",
+			lockScroll: true,
+			beforeClose: (action, instance, done) => {
+				if (deletingMap.value) return
+				if (action !== "confirm") return done()
+				instance.confirmButtonLoading = true
+				deleteTableMap(store.id, isDeleteSharedTable.value).then(() => {
+					done()
+				}).catch((err) => {
+					console.error(err)
+					ElMessage({
+						type: "error",
+						message: t("messageBox.deleteFailed"),
+						grouping: true,
+					})
+				}).finally(() => {
+					instance.confirmButtonLoading = false
+				})
+			}
+		})
+	} else {
+		ElMessageBox({
+			title: t("treeNode.deleteTableMap"),
+			message: t("treeNode.confirmDeleteLocalTableMap", { name: store.name }),
+			showCancelButton: true,
+			confirmButtonText: t("messageBox.confirm"),
+			cancelButtonText: t("messageBox.cancel"),
+			autofocus: true,
+			type: "warning",
+			lockScroll: true,
+			beforeClose: (action, instance, done) => {
+				if (deletingMap.value) return
+				if (action !== "confirm") return done()
+				instance.confirmButtonLoading = true
+				deleteTableMap(store.id).then(() => {
+					done()
+				}).catch((err) => {
+					console.error(err)
+					ElMessage({
+						type: "error",
+						message: t("messageBox.deleteFailed"),
+						grouping: true,
+					})
+				}).finally(() => {
+					instance.confirmButtonLoading = false
+				})
+			}
+		})
+	}
+}
 
 // onCurrentChange
 const activeTableNode = ref<Node>()
@@ -785,6 +906,7 @@ onMounted(() => {
 											class="delete-map el-icon--right"
 											:underline="false"
 											type="danger"
+											@click="deleteMap(item)"
 										>
 											<el-icon>
 												<CloseBold />

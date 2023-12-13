@@ -47,26 +47,26 @@ import {
 	useSelection
 } from "@qww0302/use-bitable"
 import { groupBy } from "@/utils"
-import { viewList, uid } from "../utils"
+import { viewList, uid, createMapTable } from "../utils"
 import { useStorage } from "@vueuse/core"
 
-interface StorageItem {
+export interface StorageItem {
 	name: string
 	id: string
 	type: "shared" | "local"
 }
 
-interface LocalMapStorage extends StorageItem {
+export interface LocalMapStorage extends StorageItem {
 	type: "local"
 	tableMap: NodeRaw[]
 }
 
-interface SharedMapStorage extends StorageItem {
+export interface SharedMapStorage extends StorageItem {
 	type: "shared"
 	tableMapTableId: string
 }
 
-type MapStorageItem = LocalMapStorage | SharedMapStorage
+export type MapStorageItem = LocalMapStorage | SharedMapStorage
 
 interface MapStorage {
 	storage: Record<string, Record<string, MapStorageItem>>
@@ -214,10 +214,9 @@ export function useTableMap() {
 			updateSharedTable()
 		})
 	}
-	const loadSharedTable: () => Promise<NodeRaw[]> = () => {
-		return new Promise((resolve, reject) => {
-			refreshing.value = true
-			bitable.base.getTable(sharedTableMapTableId.value as string).then((table) => {
+	const loadSharedTableRaws = (tableId: string) => {
+		return new Promise<NodeRaw[]>((resolve, reject) => {
+			bitable.base.getTable(tableId).then((table) => {
 				sharedTableMapTable.value = table
 				return table.getFieldMetaList()
 			}).then((fieldMetaList) => {
@@ -336,19 +335,15 @@ export function useTableMap() {
 						|| notExistTableRecords.length > 0
 						)
 				) {
-					console.log({
+					return addUpdateTask({
 						add: needToAdd,
 						update: needUpdate,
 						delete: notExistTableRecords,
-					}, isSharedTable.value, (
-						needUpdate.length > 0
-					|| needToAdd.length > 0
-					|| notExistTableRecords.length > 0
-					))
-					addUpdateTask({
-						add: needToAdd,
-						update: needUpdate,
-						delete: notExistTableRecords
+						callback: () => {
+							loadSharedTableRaws(sharedTableMapTableId.value as string).then((raws) => {
+								resolve(raws)
+							})
+						}
 					})
 				}
 				resolve(raws)
@@ -357,6 +352,9 @@ export function useTableMap() {
 				reject(e)
 			})
 		})
+	}
+	const loadSharedTable: () => Promise<NodeRaw[]> = () => {
+		return loadSharedTableRaws(sharedTableMapTableId.value as string)
 	}
 	const loadLocalMap: () => Promise<NodeRaw[]> = () => {
 		return new Promise((resolve, reject) => {
@@ -552,7 +550,8 @@ export function useTableMap() {
 		const nodesMap = groupBy(newNodes, "id")
 		newNodes.forEach((node) => {
 			if (!node.parent) return
-			const parent = nodesMap[node.parent][0]
+			console.log("node", node, nodesMap, nodesMap[node.parent])
+			const parent = nodesMap[node.parent]?.[0]
 			if (!parent) return
 			if (parent.category === NodeCategory.FOLDER) {
 				(parent as FolderNode).children.push(node)
@@ -831,26 +830,74 @@ export function useTableMap() {
 			})
 		}
 		if (template.type === "shared") {
-			const loading = ElLoading.service({
-				lock: true,
-				background: "rgba(0, 0, 0, 0.7)",
-				text: "Loading..."
-			})
-			return loadSharedTable().then((raws) => {
-				const newMap = {
-					name,
-					id: name,
-					type: "local",
-					tableMap: raws,
-				} as LocalMapStorage
-				mapList.value.push(newMap)
-				tableMap.value = raws
-				setCurrentMap(newMap.id)
-				loading.close()
-			})
+			return loadTableList()
+				.then(() => loadSharedTableRaws(template.tableMapTableId))
+				.then((raws) => {
+					const newMap = {
+						name,
+						id: name,
+						type: "local",
+						tableMap: raws,
+					} as LocalMapStorage
+					mapList.value.push(newMap)
+					tableMap.value = raws
+					setCurrentMap(newMap.id)
+				})
 		}
 	}
-	const setCurrentMap = (id: string) => {
+	const createSharedMap = (name: string, templateId?: string) => {
+		const template = mapList.value.find((i) => i.id === templateId)
+		if (!template) {
+			return createMapTable(name)
+				.then((table) => {
+					const newMap = {
+						name,
+						id: name,
+						type: "shared",
+						tableMapTableId: table.id,
+					} as SharedMapStorage
+					mapList.value.push(newMap)
+					setCurrentMap(newMap.id)
+					return table
+				})
+				.catch((err) => {
+					console.error(err)
+				})
+		}
+		if (template.type === "local") {
+			return createMapTable(name)
+				.then((table) => {
+					const newMap = {
+						name,
+						id: name,
+						type: "shared",
+						tableMapTableId: table.id,
+					} as SharedMapStorage
+					mapList.value.push(newMap)
+					setCurrentMap(newMap.id)
+					return table
+				})
+				.catch((err) => {
+					console.error(err)
+				})
+		}
+		return createMapTable(name).then((table) => {
+			const newMap = {
+				name,
+				id: name,
+				type: "shared",
+				tableMapTableId: table.id,
+			} as SharedMapStorage
+			mapList.value.push(newMap)
+			setCurrentMap(newMap.id)
+			return table
+		})
+	}
+	const setCurrentMap = (id: string | null) => {
+		if (!id) {
+			currentMap.value = null
+			return
+		}
 		const map = mapList.value.find((map) => map.id === id)
 		if (!map) return
 		if (map.type === "local") {
@@ -955,6 +1002,29 @@ export function useTableMap() {
 			}
 		})
 	}
+	const deleteTableMap = (id: string, deleteSharedTable: boolean = false) => {
+		return new Promise((resolve, reject) => {
+			const index = mapList.value.findIndex((map) => map.id === id)
+			if (index === -1) return reject(new Error("No map"))
+			const map = mapList.value[index]
+			if (map.type === "shared") {
+				if (!sharedTableMapTable.value || !editable.value) return reject(new Error("No permission"))
+				if (deleteSharedTable) return bitable.base.deleteTable(sharedTableMapTableId.value as string).then(() => {
+					mapList.value = mapList.value.filter((map) => map.id !== id)
+					setCurrentMap(mapList.value.length ? mapList.value[Math.min(index, mapList.value.length - 1)].id : null)
+					resolve(mapList.value)
+				})
+				mapList.value = mapList.value.filter((map) => map.id !== id)
+				mapList.value = mapList.value.filter((map) => map.id !== id)
+				setCurrentMap(mapList.value.length ? mapList.value[Math.min(index, mapList.value.length - 1)].id : null)
+				resolve(mapList.value)
+			} else {
+				mapList.value = mapList.value.filter((map) => map.id !== id)
+				setCurrentMap(mapList.value.length ? mapList.value[Math.min(index, mapList.value.length - 1)].id : null)
+				resolve(mapList.value)
+			}
+		})
+	}
 
 	watch(curBaseStore, (newVal, oldVal) => {
 		console.log("curBaseStore", newVal, oldVal, store.value)
@@ -977,7 +1047,7 @@ export function useTableMap() {
 	}, { deep: true })
 
 	watch(currentMap, () => {
-		if (!currentMap.value) return
+		if (!currentMap.value) return tableMap.value = []
 		console.log("currentMap", currentMap.value)
 		if (currentMap.value.type === "shared") {
 			sharedTableMapTableId.value = currentMap.value.tableMapTableId
@@ -987,7 +1057,7 @@ export function useTableMap() {
 				background: "rgba(0, 0, 0, 0.7)",
 				text: "Loading..."
 			})
-			loadSharedTable().then((raws) => {
+			loadTableList().then(loadSharedTable).then((raws) => {
 				tableMap.value = raws
 				loading.close()
 			}).catch((e) => {
@@ -1002,15 +1072,18 @@ export function useTableMap() {
 		}
 		if (currentMap.value.type === "local") {
 			isSharedTable.value = false
-			loadTableList().then(() => {
-				return loadLocalMap()
-			}).then((raws) => {
+			loadTableList().then(loadLocalMap).then((raws) => {
 				tableMap.value = raws
 			})
 		}
 	})
 
 	watch(tableMap, () => {
+		if (!tableMap.value.length) {
+			nodes.value = []
+			treeData.value = []
+			return
+		}
 		if (isSharedTable.value) {
 			updateTreeData()
 			return
@@ -1106,5 +1179,7 @@ export function useTableMap() {
 		renameNode,
 		manageable,
 		deleteNode,
+		deleteTableMap,
+		createSharedMap,
 	}
 }

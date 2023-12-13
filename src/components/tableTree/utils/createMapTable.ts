@@ -14,31 +14,24 @@ export function createMapTable(name: string) {
 				name: "Name",
 			},
 			{
-				type: FieldType.SingleSelect,
+				type: FieldType.Text,
 				name: "Category",
-				property: {
-					options: [
-						{
-							name: "Folder",
-						},
-						{
-							name: "Table",
-						},
-					]
-				}
 			},
+			{
+				type: FieldType.Text,
+				name: "tableId",
+			}
 		]
-	}).then((res)=>{
+	}).then((res) => {
 		return bitable.base.getTable(res.tableId)
-	}).then((tbl)=>{
-		tbl.addField({
+	}).then((tbl) => {
+		return tbl.addField({
 			type: FieldType.SingleLink,
 			name: "Parent",
 			property: {
 				tableId: tbl.id,
 				multiple: false,
 			}
-		})
-		return tbl
+		}).then(() => tbl)
 	})
 }

@@ -45,6 +45,11 @@ export const en = {
 		localTableMap: "Local Table Map",
 		tableMapTemplate: "Table Map Template",
 		rename: "Rename",
+		deleteTableMap: "Delete Table Map",
+		confirmDeleteLocalTableMap: "Are you sure to delete the local table map [{name}]?",
+		confirmDeleteSharedTableMap: "Are you sure to delete the shared table map [{name}]?",
+		onlyLocalMap: "Only delete table map locally",
+		deleteSharedTableMap: "Delete shared table map table together",
 	},
 	fields: {
 		Text: "Text",
