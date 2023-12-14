@@ -611,6 +611,9 @@ export function useTableMap() {
 				if (removingNode.value) return
 				if (action !== "confirm") {
 					done()
+					loadLocalMap().then((raws) => {
+						tableMap.value = raws
+					})
 					return
 				}
 				instance.confirmButtonLoading = true
@@ -643,7 +646,7 @@ export function useTableMap() {
 				} else {
 					if (currentMap.value === null) return
 					// (node as NodeItem).parent = typeof to === "object" && to !== null ? to.id : null
-					const raw = tableMap.value.find((raw) => raw.id === (node as NodeItem).id)
+					const raw = currentMap.value.tableMap.find((raw) => raw.id === (node as NodeItem).id)
 					if (!raw) return
 					raw.parent = typeof to === "object" && to !== null ? to.id : null
 					console.log("remove", mapList, currentMap.value, nodes, tableMap)
@@ -772,12 +775,12 @@ export function useTableMap() {
 						fields: tableConfig?.fields || [],
 					}).then(({ tableId }) => {
 						raw.tableid = tableId
-						tableMap.value.push(raw)
+						currentMap.value.tableMap.push(raw)
 						creatingNode.value = false
 						resolve(tableId)
 					})
 				}
-				tableMap.value.push(raw)
+				currentMap.value.tableMap.push(raw)
 				creatingNode.value = false
 				console.log(store.value)
 				resolve("")
@@ -829,6 +832,7 @@ export function useTableMap() {
 				setCurrentMap(newMap.id)
 			})
 		}
+		// TODO: create local map from template
 		if (template.type === "shared") {
 			return loadTableList()
 				.then(() => loadSharedTableRaws(template.tableMapTableId))
@@ -864,6 +868,7 @@ export function useTableMap() {
 					console.error(err)
 				})
 		}
+		// TODO: create shared map from template
 		if (template.type === "local") {
 			return createMapTable(name)
 				.then((table) => {
@@ -995,10 +1000,18 @@ export function useTableMap() {
 				})
 			} else {
 				if (!currentMap.value) return reject(new Error("No current map"))
-				const raw = tableMap.value.find((raw) => raw.id === node.id)
+				if (node.category === NodeCategory.TABLE) {
+					return bitable.base.deleteTable(node.meta.id).then(() => {
+						const raw = tableMap.value.find((raw) => raw.id === node.id)
+						if (!raw) return reject(new Error("No raw"))
+						tableMap.value = tableMap.value.filter((raw) => raw.id !== node.id)
+						resolve(tableMap.value)
+					})
+				}
+				const raw = currentMap.value.tableMap.find((raw) => raw.id === node.id)
 				if (!raw) return reject(new Error("No raw"))
-				tableMap.value = tableMap.value.filter((raw) => raw.id !== node.id)
-				resolve(tableMap.value)
+				currentMap.value.tableMap = currentMap.value.tableMap.filter((raw) => raw.id !== node.id)
+				resolve(currentMap.value.tableMap)
 			}
 		})
 	}
@@ -1076,21 +1089,19 @@ export function useTableMap() {
 				tableMap.value = raws
 			})
 		}
-	})
+	}, {deep: true})
 
 	watch(tableMap, () => {
-		if (!tableMap.value.length) {
+		if (!tableMap.value.length || !currentMap.value) {
 			nodes.value = []
 			treeData.value = []
 			return
 		}
-		if (isSharedTable.value) {
+		if (currentMap.value.type === "shared") {
 			updateTreeData()
 			return
 		} else {
-			loadLocalMap().then(() => {
-				updateTreeData()
-			})
+			updateTreeData()
 		}
 	}, { deep: true })
 

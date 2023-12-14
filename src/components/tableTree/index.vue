@@ -10,6 +10,7 @@ import {
 	ArrowDown,
 	Share,
 	Folder,
+	Delete,
 } from "@element-plus/icons-vue"
 import {
 	ref,
@@ -32,6 +33,7 @@ import {
 	ElSelectV2,
 	ElRadioGroup,
 	ElRadio,
+	ElCheckbox,
 } from "element-plus"
 import { useTableMap, type MapStorageItem } from "./composables"
 import type { IFieldConfig } from "@lark-base-open/js-sdk"
@@ -74,6 +76,7 @@ const {
 	manageable,
 	deleteTableMap,
 	createSharedMap,
+	deleteNode: deleteNodeItem,
 } = useTableMap()
 
 // Search
@@ -405,6 +408,7 @@ const newMap = (_type?: "shared" | "local") => {
 									}
 								}
 							),
+							// TODO: 模板选择
 							// h(
 							// 	ElFormItem,
 							// 	{
@@ -673,6 +677,108 @@ const deleteMap = (store: MapStorageItem) => {
 	}
 }
 
+// deleteNode
+const deletingNode = ref(false)
+const canDelete = computed(() => {
+	if (!contextMenuNode.value) return false
+	if (contextMenuNode.value.category === NodeCategory.TABLE) return manageable.value
+	if (contextMenuNode.value.category === NodeCategory.VIEW) return false
+	if (contextMenuNode.value.category === NodeCategory.FOLDER) {
+		if (contextMenuNode.value.tableId) return false
+		return editable.value
+	}
+	return true
+})
+const notAskOnDelete = ref(false)
+const deleNode = () => {
+	if (!contextMenuNode.value) return
+	if (notAskOnDelete.value) {
+		deletingNode.value = true
+		return deleteNodeItem(contextMenuNode.value).catch((err) => {
+			console.error(err)
+		}).finally(() => {
+			deletingNode.value = false
+		})
+	}
+	const tempAskOnDelete = ref<boolean>(notAskOnDelete.value)
+	ElMessageBox({
+		title: t(
+			"treeNode.deleteNode",
+			{
+				name: t(`treeNode.${contextMenuNode.value.category.toLowerCase()}`)
+			}
+		),
+		showCancelButton: true,
+		confirmButtonText: t("messageBox.confirm"),
+		cancelButtonText: t("messageBox.cancel"),
+		autofocus: true,
+		type: "warning",
+		confirmButtonClass: "el-button--danger",
+		lockScroll: true,
+		message: () => {
+			return h(
+				"div",
+				{
+					style: {
+						display: "flex",
+						flexDirection: "column",
+					}
+				},
+				[
+					t(
+						"treeNode.confirmDeleteNode",
+						{
+							name: contextMenuNode.value!.name
+						}
+					),
+					h(
+						ElCheckbox,
+						{
+							modelValue: tempAskOnDelete.value,
+							"onUpdate:modelValue": (val) => {
+								tempAskOnDelete.value = val as boolean
+							},
+						},
+						{
+							default: () => t(
+								"treeNode.notAskNextTime",
+								{
+									name: contextMenuNode.value!.name
+								})
+						}
+					)
+				]
+			)
+		},
+		beforeClose: (action, instance, done) => {
+			if (deletingNode.value) return
+			if (action !== "confirm") return done()
+			instance.confirmButtonLoading = true
+			deletingNode.value = true
+			notAskOnDelete.value = tempAskOnDelete.value
+			deleteNodeItem(contextMenuNode.value!).then(() => {
+				done()
+			}).catch((err) => {
+				console.error(err)
+				ElMessage({
+					type: "error",
+					message: t("messageBox.deleteFailed"),
+					grouping: true,
+				})
+			}).finally(() => {
+				instance.confirmButtonLoading = false
+				deletingNode.value = false
+			})
+		}
+	})
+}
+addContextMenuItem({
+	icon: Delete,
+	text: "treeNode.deleteNode",
+	onClick: deleNode,
+	permission: canDelete,
+})
+
 // onCurrentChange
 const activeTableNode = ref<Node>()
 const onCurrentChange = (data: NodeItem, node: Node) => {
@@ -706,8 +812,11 @@ const onCurrentChange = (data: NodeItem, node: Node) => {
 const onDrop = (
 	draggingNode: Node,
 	dropNode: Node,
-	dropType: NodeDropType
+	dropType: NodeDropType,
+	event: DragEvent
 ) => {
+	event.preventDefault()
+	console.log(event)
 	if (dropType === "inner") removeNodeTo(draggingNode.data as NodeItem, dropNode.data as NodeItem, () => {
 		dropNode.loadData(() => {
 			dropNode.expand(()=>{}, true)
@@ -997,7 +1106,7 @@ onMounted(() => {
 					@current-change="onCurrentChange"
 					@node-click="onNodeClick"
 					@node-contextmenu="onNodeContextmenu"
-					@node-drop="onDrop"
+					@node-drag-end="onDrop"
 				>
 					<template #default="{ data }">
 						<treeNode :node="data" />

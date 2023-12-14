@@ -52,6 +52,11 @@ export const zh = {
 		confirmDeleteSharedTableMap: "确定删除共享数据表关系 [{name}] 吗？",
 		onlyLocalMap: "仅删除本地的数据表关系",
 		deleteSharedTableMap: "将共享数据表关系表一起删除",
+		deleteNode: "删除{name}",
+		folder: "文件夹",
+		table: "数据表",
+		confirmDeleteNode: "确定删除 \"{name}\" 吗？",
+		notAskNextTime: "下次不再询问",
 	},
 	fields: {
 		Text: "文本",
