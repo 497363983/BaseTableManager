@@ -21,6 +21,10 @@ useTheme({
 		isDark.value = theme === ThemeModeType.DARK
 	},
 })
+bitable.bridge.getTheme().then((theme) => {
+	isDark.value = theme === ThemeModeType.DARK
+})
+
 const setLocale = (lang: "zh" | "en") => {
 	i18n.global.locale.value = lang
 	switch (lang) {
