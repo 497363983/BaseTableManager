@@ -11,6 +11,7 @@ import {
 	Share,
 	Folder,
 	Delete,
+	MoreFilled,
 } from "@element-plus/icons-vue"
 import {
 	ref,
@@ -993,16 +994,14 @@ onMounted(() => {
 							<el-dropdown-item
 								v-for="item of mapList"
 								:key="item.id"
-								style="display: flex;align-items: center;"
 								:command="item.id"
+								:icon="item.type === 'shared' ? Share : Folder"
 							>
 								<el-row style="width: 100%;">
-									<el-col :span="4">
-										<el-icon>
-											<component :is="item.type === 'shared' ? Share : Folder" />
-										</el-icon>
-									</el-col>
-									<el-col :span="16">
+									<el-col
+										:span="20"
+										style="display: flex;align-items: center;"
+									>
 										<el-text
 											truncated
 											:title="item.name"
@@ -1030,11 +1029,28 @@ onMounted(() => {
 				<div
 					class="map-select"
 					style="display: inline-flex;"
-					@click="newMap()"
 				>
-					<el-icon size="large">
-						<Plus />
-					</el-icon>
+					<el-dropdown trigger="click">
+						<el-icon size="large">
+							<Plus />
+						</el-icon>
+						<template #dropdown>
+							<el-dropdown-menu>
+								<el-dropdown-item
+									:icon="MoreFilled"
+									@click="selectSharedTableMapTable()"
+								>
+									{{ $t("tips.selectTableMap") }}
+								</el-dropdown-item>
+								<el-dropdown-item
+									:icon="Plus"
+									@click="newMap()"
+								>
+									{{ $t("treeNode.newTableMap") }}
+								</el-dropdown-item>
+							</el-dropdown-menu>
+						</template>
+					</el-dropdown>
 				</div>
 			</el-col>
 			<el-col :span="10">

@@ -7,7 +7,7 @@ export const en = {
 		inputFolderName: "Input folder name",
 	},
 	tips: {
-		noTableMap: "No table map found",
+		noTableMap: "No table catalog found",
 		autoCreateTableMap: "Auto create table map",
 		autoCreateToShare: "Auto create will create a new table in the Base to share the table relationship with your team. ",
 		selectTableMap: "Select table map",

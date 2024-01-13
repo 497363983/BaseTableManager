@@ -20,7 +20,7 @@ export enum NodeIcon {
 	WIDGETVIEW = "WidgetView",
 }
 
-export interface NodeRaw {
+export interface NodeRaw extends Record<string, unknown> {
 	id: string
 	name: string
 	category: NodeCategory

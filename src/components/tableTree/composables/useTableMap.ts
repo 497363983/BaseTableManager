@@ -73,16 +73,15 @@ interface MapStorage {
 	lastOpened: string | null
 }
 
-const getTablePermission = (tableId: string, type: TableOperation) => {
-	return bitable.base.getPermission({
+const getTablePermission = async (tableId: string, type: TableOperation) => {
+	const permission = await bitable.base.getPermission({
 		entity: PermissionEntity.Table,
 		param: {
 			tableId,
 		},
 		type,
-	}).then((permission) => {
-		return permission
 	})
+	return permission
 }
 
 export function useTableMap() {
@@ -127,7 +126,7 @@ export function useTableMap() {
 		param: {}
 	}).then((permission) => {
 		canAddTable.value = permission
-		console.log("canAdd",permission)
+		console.log("canAdd", permission)
 	})
 	bitable.base.getPermission({
 		entity: PermissionEntity.Base,
@@ -158,7 +157,7 @@ export function useTableMap() {
 		return node.id
 	})
 
-	const loadTableList = () =>{
+	const loadTableList = () => {
 		return Promise.all([
 			bitable.base.getTableMetaList().then((res) => {
 				tableMetaList.value = res
@@ -179,14 +178,14 @@ export function useTableMap() {
 			}
 		})
 	})
-	const nodeRawPropIds = computed(()=>{
+	const nodeRawPropIds = computed(() => {
 		const rawKeys = ["id", "name", "category", "parent", "tableid"]
 		return sharedTableMapTableFieldMetaList.value.reduce((prev, curr) => {
 			if (rawKeys.includes(curr.name.toLocaleLowerCase())) prev[curr.name.toLowerCase() as keyof NodeRaw] = curr.id
 			return prev
 		}, {} as Record<keyof NodeRaw, string>)
 	})
-	const tableFieldsName = computed(()=>{
+	const tableFieldsName = computed(() => {
 		return Object.keys(nodeRawPropIds.value)
 	})
 	const updateSharedTable = () => {
@@ -203,7 +202,7 @@ export function useTableMap() {
 			update.length > 0 ? sharedTableMapTable.value?.setRecords(toRaw(update)) : null,
 			del.length > 0 ? sharedTableMapTable.value?.deleteRecords(toRaw(del)) : null,
 			add.length > 0 ? sharedTableMapTable.value?.addRecords(toRaw(add)) : null,
-		]).then((res)=>{
+		]).then((res) => {
 			console.log("updateRes", res)
 			callback?.()
 			sharedTableUpdating.value = false
@@ -223,7 +222,7 @@ export function useTableMap() {
 				sharedTableMapTableFieldMetaList.value = fieldMetaList
 				return getTableRecords(sharedTableMapTable.value as ITable)
 			}).then((records) => {
-				if (["id", "name", "category", "parent", "tableid"].some((key) => !tableFieldsName.value.includes(key)))  {
+				if (["id", "name", "category", "parent", "tableid"].some((key) => !tableFieldsName.value.includes(key))) {
 					ElMessage.error({
 						message: "TableMap Table must have id, Name, Category, Parent, tableId fields",
 						grouping: true,
@@ -328,12 +327,13 @@ export function useTableMap() {
 				})
 				if (extraRaws.length > 0) raws.push(...extraRaws)
 				if (
-					isSharedTable.value
-						&& (
-							needUpdate.length > 0
+					!sharedTableUpdating.value
+					&& isSharedTable.value
+					&& (
+						needUpdate.length > 0
 						|| needToAdd.length > 0
 						|| notExistTableRecords.length > 0
-						)
+					)
 				) {
 					return addUpdateTask({
 						add: needToAdd,
@@ -436,7 +436,7 @@ export function useTableMap() {
 				disabled.value = true
 				console.log(instance)
 				isSharedTable.value = true
-				loadSharedTable().then((raws)=>{
+				loadSharedTable().then((raws) => {
 					const map = mapList.value.find((map) => map.type === "shared" && map.tableMapTableId && map.tableMapTableId === sharedTableMapTableId.value)
 					console.log("loadTable", map)
 					if (map) {
@@ -458,7 +458,7 @@ export function useTableMap() {
 						message: i18n.global.t("messageBox.readTableMapSuccess"),
 						grouping: true,
 					})
-				}).catch((e)=>{
+				}).catch((e) => {
 					console.error(e)
 					ElMessage.error({
 						message: e.message,
@@ -580,7 +580,7 @@ export function useTableMap() {
 			return 0
 		})
 		const tree = newNodes.filter((node) => !node.parent)
-		console.log("tree",tree)
+		console.log("tree", tree)
 		refreshing.value = true
 		treeData.value = tree
 	}
@@ -618,7 +618,7 @@ export function useTableMap() {
 				}
 				instance.confirmButtonLoading = true
 				removingNode.value = true
-				if (isSharedTable.value) {
+				if (currentMap.value?.type === "shared") {
 					if (!sharedTableMapTable.value || !editable.value) return
 					addUpdateTask({
 						add: [],
@@ -697,7 +697,7 @@ export function useTableMap() {
 			if (parent && parent.tableId) {
 				parent = getNodeByKey(parent.parent as string) as NodeItem
 			}
-			if (isSharedTable.value) {
+			if (currentMap.value?.type === "shared") {
 				if (!sharedTableMapTable.value || !editable.value) reject(new Error("error"))
 				if (type === NodeCategory.TABLE) {
 					return bitable.base.addTable({
@@ -722,7 +722,7 @@ export function useTableMap() {
 							delete: [],
 							callback: () => {
 								creatingNode.value = false
-								loadTableList().then(()=>{
+								loadTableList().then(() => {
 									return loadSharedTable()
 								}).then((raws) => {
 									tableMap.value = raws
@@ -1056,7 +1056,7 @@ export function useTableMap() {
 			prev[curr.id] = curr
 			return prev
 		},
-		{} as Record<string, MapStorageItem>)
+			{} as Record<string, MapStorageItem>)
 	}, { deep: true })
 
 	watch(currentMap, () => {
@@ -1089,7 +1089,7 @@ export function useTableMap() {
 				tableMap.value = raws
 			})
 		}
-	}, {deep: true})
+	}, { deep: true })
 
 	watch(tableMap, () => {
 		if (!tableMap.value.length || !currentMap.value) {
@@ -1127,37 +1127,37 @@ export function useTableMap() {
 	{ deep: true })
 
 	onTableAdd(() => {
-		loadTableList().then(()=>{
+		loadTableList().then(() => {
 			if (isSharedTable.value) return loadSharedTable()
 			return loadLocalMap()
-		}).then((raws)=>{
+		}).then((raws) => {
 			tableMap.value = raws
 		})
 	})
 
 	onTableDelete(() => {
-		loadTableList().then(()=>{
+		loadTableList().then(() => {
 			if (isSharedTable.value) return loadSharedTable()
 			return loadLocalMap()
-		}).then((raws)=>{
+		}).then((raws) => {
 			tableMap.value = raws
 		})
 	})
 
 	onRecordAdd(sharedTableMapTable, () => {
-		loadSharedTable().then((raws)=>{
+		loadSharedTable().then((raws) => {
 			tableMap.value = raws
 		})
 	})
 
 	onRecordModify(sharedTableMapTable, () => {
-		loadSharedTable().then((raws)=>{
+		loadSharedTable().then((raws) => {
 			tableMap.value = raws
 		})
 	})
 
 	onRecordAdd(sharedTableMapTable, () => {
-		loadSharedTable().then((raws)=>{
+		loadSharedTable().then((raws) => {
 			tableMap.value = raws
 		})
 	})
