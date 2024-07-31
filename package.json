@@ -21,7 +21,7 @@
 		"@commitlint/config-conventional": "^19.0.0",
 		"@types/fs-extra": "^11.0.4",
 		"@types/node": "^20.7.1",
-		"@typescript-eslint/eslint-plugin": "^7.0.0",
+		"@typescript-eslint/eslint-plugin": "^8.0.0",
 		"@vitejs/plugin-vue": "^5.0.0",
 		"eslint": "^8.54.0",
 		"eslint-plugin-markdown": "^5.0.0",
