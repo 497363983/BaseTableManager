@@ -45,7 +45,7 @@
 		"@qww0302/use-bitable": "^0.3.0",
 		"@unhead/vue": "^1.8.8",
 		"@vueuse/components": "^11.0.0",
-		"@vueuse/core": "^10.6.1",
+		"@vueuse/core": "^11.0.0",
 		"element-plus": "^2.4.2",
 		"vue": "^3.3.8",
 		"vue-i18n": "^9.7.1"
