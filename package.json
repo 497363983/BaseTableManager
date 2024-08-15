@@ -44,7 +44,7 @@
 		"@lark-base-open/js-sdk": "^0.4.0",
 		"@qww0302/use-bitable": "^0.3.0",
 		"@unhead/vue": "^1.8.8",
-		"@vueuse/components": "^10.6.1",
+		"@vueuse/components": "^11.0.0",
 		"@vueuse/core": "^10.6.1",
 		"element-plus": "^2.4.2",
 		"vue": "^3.3.8",
