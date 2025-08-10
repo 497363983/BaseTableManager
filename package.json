@@ -22,7 +22,7 @@
 		"@types/fs-extra": "^11.0.4",
 		"@types/node": "^22.0.0",
 		"@typescript-eslint/eslint-plugin": "^8.0.0",
-		"@vitejs/plugin-vue": "^5.0.0",
+		"@vitejs/plugin-vue": "^6.0.0",
 		"eslint": "^9.0.0",
 		"eslint-plugin-markdown": "^5.0.0",
 		"eslint-plugin-vue": "^10.0.0",
